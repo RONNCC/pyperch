@@ -59,7 +59,6 @@ class GAModule(nn.Module):
         self.activation = activation
         self.output_activation = output_activation
         self.layers = nn.ModuleList()
-        self.device = "cuda" if torch.cuda.is_available() else "cpu"
         self.population_size = population_size
         self.to_mate = to_mate
         self.to_mutate = to_mutate
@@ -67,7 +66,7 @@ class GAModule(nn.Module):
 
         # Create layers based on layer_sizes
         for i in range(len(self.layer_sizes) - 1):
-            self.layers.append(nn.Linear(self.layer_sizes[i], self.layer_sizes[i + 1], device=self.device))
+            self.layers.append(nn.Linear(self.layer_sizes[i], self.layer_sizes[i + 1]))
 
     def forward(self, X, **kwargs):
         """
@@ -128,6 +127,9 @@ class GAModule(nn.Module):
             The fitness score (negative loss) of the model.
         """
         individual.eval()
+        device = next(individual.parameters()).device
+        data = data.to(device)
+        targets = targets.to(device)
         with torch.no_grad():
             outputs = individual(data)
             loss = criterion(outputs, targets)
@@ -195,7 +197,12 @@ class GAModule(nn.Module):
         y_pred {torch.tensor}:
             Predicted labels.
         """
-        # calc old loss
+        # Ensure data is on the correct device
+        device = next(net.module_.parameters()).device
+        X_train = X_train.to(device)
+        y_train = y_train.to(device)
+
+        # Calculate old loss
         y_pred = net.infer(X_train, **fit_params)
         loss = net.get_loss(y_pred, y_train, X_train, training=False)
 
@@ -250,7 +257,7 @@ class GAModule(nn.Module):
         old_model = net.module_
         net.module_ = deepcopy(self.population[best_fitness_index])
 
-        # calc new loss
+        # Calculate new loss
         new_y_pred = net.infer(X_train, **fit_params)
         new_loss = net.get_loss(new_y_pred, y_train, X_train, training=False)
 
@@ -271,8 +278,9 @@ class GAModule(nn.Module):
         def train_step_single(self, batch, **fit_params):
             self._set_training(True)
             Xi, yi = unpack_data(batch)
-            # disable backprop and run custom training step
-            # loss.backward()
+            Xi = self.to_device(Xi)
+            yi = self.to_device(yi)
+            # Disable backprop and run custom training step
             loss, y_pred = self.module_.run_ga_single_step(self, Xi, yi, **fit_params)
             return {
                 'loss': loss,
